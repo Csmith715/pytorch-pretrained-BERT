@@ -16,9 +16,12 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os
 import unittest
 import json
 import random
+import shutil
+import pytest
 
 import torch
 
@@ -26,6 +29,7 @@ from pytorch_pretrained_bert import (BertConfig, BertModel, BertForMaskedLM,
                                      BertForNextSentencePrediction, BertForPreTraining,
                                      BertForQuestionAnswering, BertForSequenceClassification,
                                      BertForTokenClassification)
+from pytorch_pretrained_bert.modeling import PRETRAINED_MODEL_ARCHIVE_MAP
 
 
 class BertModelTest(unittest.TestCase):
@@ -114,6 +118,7 @@ class BertModelTest(unittest.TestCase):
 
         def create_bert_model(self, config, input_ids, token_type_ids, input_mask, sequence_labels, token_labels):
             model = BertModel(config=config)
+            model.eval()
             all_encoder_layers, pooled_output = model(input_ids, token_type_ids, input_mask)
             outputs = {
                 "sequence_output": all_encoder_layers[-1],
@@ -134,6 +139,7 @@ class BertModelTest(unittest.TestCase):
 
         def create_bert_for_masked_lm(self, config, input_ids, token_type_ids, input_mask, sequence_labels, token_labels):
             model = BertForMaskedLM(config=config)
+            model.eval()
             loss = model(input_ids, token_type_ids, input_mask, token_labels)
             prediction_scores = model(input_ids, token_type_ids, input_mask)
             outputs = {
@@ -149,6 +155,7 @@ class BertModelTest(unittest.TestCase):
 
         def create_bert_for_next_sequence_prediction(self, config, input_ids, token_type_ids, input_mask, sequence_labels, token_labels):
             model = BertForNextSentencePrediction(config=config)
+            model.eval()
             loss = model(input_ids, token_type_ids, input_mask, sequence_labels)
             seq_relationship_score = model(input_ids, token_type_ids, input_mask)
             outputs = {
@@ -165,6 +172,7 @@ class BertModelTest(unittest.TestCase):
 
         def create_bert_for_pretraining(self, config, input_ids, token_type_ids, input_mask, sequence_labels, token_labels):
             model = BertForPreTraining(config=config)
+            model.eval()
             loss = model(input_ids, token_type_ids, input_mask, token_labels, sequence_labels)
             prediction_scores, seq_relationship_score = model(input_ids, token_type_ids, input_mask)
             outputs = {
@@ -185,6 +193,7 @@ class BertModelTest(unittest.TestCase):
 
         def create_bert_for_question_answering(self, config, input_ids, token_type_ids, input_mask, sequence_labels, token_labels):
             model = BertForQuestionAnswering(config=config)
+            model.eval()
             loss = model(input_ids, token_type_ids, input_mask, sequence_labels, sequence_labels)
             start_logits, end_logits = model(input_ids, token_type_ids, input_mask)
             outputs = {
@@ -205,6 +214,7 @@ class BertModelTest(unittest.TestCase):
 
         def create_bert_for_sequence_classification(self, config, input_ids, token_type_ids, input_mask, sequence_labels, token_labels):
             model = BertForSequenceClassification(config=config, num_labels=self.num_labels)
+            model.eval()
             loss = model(input_ids, token_type_ids, input_mask, sequence_labels)
             logits = model(input_ids, token_type_ids, input_mask)
             outputs = {
@@ -221,6 +231,7 @@ class BertModelTest(unittest.TestCase):
 
         def create_bert_for_token_classification(self, config, input_ids, token_type_ids, input_mask, sequence_labels, token_labels):
             model = BertForTokenClassification(config=config, num_labels=self.num_labels)
+            model.eval()
             loss = model(input_ids, token_type_ids, input_mask, token_labels)
             logits = model(input_ids, token_type_ids, input_mask)
             outputs = {
@@ -243,6 +254,22 @@ class BertModelTest(unittest.TestCase):
         obj = json.loads(config.to_json_string())
         self.assertEqual(obj["vocab_size"], 99)
         self.assertEqual(obj["hidden_size"], 37)
+
+    def test_config_to_json_file(self):
+        config_first = BertConfig(vocab_size_or_config_json_file=99, hidden_size=37)
+        json_file_path = "/tmp/config.json"
+        config_first.to_json_file(json_file_path)
+        config_second = BertConfig.from_json_file(json_file_path)
+        os.remove(json_file_path)
+        self.assertEqual(config_second.to_dict(), config_first.to_dict())
+
+    @pytest.mark.slow
+    def test_model_from_pretrained(self):
+        cache_dir = "/tmp/pytorch_pretrained_bert_test/"
+        for model_name in list(PRETRAINED_MODEL_ARCHIVE_MAP.keys())[:1]:
+            model = BertModel.from_pretrained(model_name, cache_dir=cache_dir)
+            shutil.rmtree(cache_dir)
+            self.assertIsNotNone(model)
 
     def run_tester(self, tester):
         config_and_inputs = tester.prepare_config_and_inputs()

@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Google AI Language Team Authors and The HugginFace Inc. team.
+# Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,14 +14,13 @@
 # limitations under the License.
 """Tokenization classes."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import collections
-import unicodedata
-import os
 import logging
+import os
+import unicodedata
+from io import open
 
 from .file_utils import cached_path
 
@@ -64,7 +63,7 @@ def load_vocab(vocab_file):
 
 
 def whitespace_tokenize(text):
-    """Runs basic whitespace cleaning and splitting on a peice of text."""
+    """Runs basic whitespace cleaning and splitting on a piece of text."""
     text = text.strip()
     if not text:
         return []
@@ -75,8 +74,22 @@ def whitespace_tokenize(text):
 class BertTokenizer(object):
     """Runs end-to-end tokenization: punctuation splitting + wordpiece"""
 
-    def __init__(self, vocab_file, do_lower_case=True, max_len=None,
+    def __init__(self, vocab_file, do_lower_case=True, max_len=None, do_basic_tokenize=True,
                  never_split=("[UNK]", "[SEP]", "[PAD]", "[CLS]", "[MASK]")):
+        """Constructs a BertTokenizer.
+
+        Args:
+          vocab_file: Path to a one-wordpiece-per-line vocabulary file
+          do_lower_case: Whether to lower case the input
+                         Only has an effect when do_wordpiece_only=False
+          do_basic_tokenize: Whether to do basic tokenization before wordpiece.
+          max_len: An artificial maximum length to truncate tokenized sequences to;
+                         Effective maximum length is always the minimum of this
+                         value (if specified) and the underlying BERT model's
+                         sequence length.
+          never_split: List of tokens which will never be split during tokenization.
+                         Only has an effect when do_wordpiece_only=False
+        """
         if not os.path.isfile(vocab_file):
             raise ValueError(
                 "Can't find a vocabulary file at path '{}'. To load the vocabulary from a Google pretrained "
@@ -84,16 +97,21 @@ class BertTokenizer(object):
         self.vocab = load_vocab(vocab_file)
         self.ids_to_tokens = collections.OrderedDict(
             [(ids, tok) for tok, ids in self.vocab.items()])
-        self.basic_tokenizer = BasicTokenizer(do_lower_case=do_lower_case,
-                                              never_split=never_split)
+        self.do_basic_tokenize = do_basic_tokenize
+        if do_basic_tokenize:
+          self.basic_tokenizer = BasicTokenizer(do_lower_case=do_lower_case,
+                                                never_split=never_split)
         self.wordpiece_tokenizer = WordpieceTokenizer(vocab=self.vocab)
         self.max_len = max_len if max_len is not None else int(1e12)
 
     def tokenize(self, text):
         split_tokens = []
-        for token in self.basic_tokenizer.tokenize(text):
-            for sub_token in self.wordpiece_tokenizer.tokenize(token):
-                split_tokens.append(sub_token)
+        if self.do_basic_tokenize:
+            for token in self.basic_tokenizer.tokenize(text):
+                for sub_token in self.wordpiece_tokenizer.tokenize(token):
+                    split_tokens.append(sub_token)
+        else:
+            split_tokens = self.wordpiece_tokenizer.tokenize(text)
         return split_tokens
 
     def convert_tokens_to_ids(self, tokens):
@@ -102,7 +120,7 @@ class BertTokenizer(object):
         for token in tokens:
             ids.append(self.vocab[token])
         if len(ids) > self.max_len:
-            raise ValueError(
+            logger.warning(
                 "Token indices sequence length is longer than the specified maximum "
                 " sequence length for this BERT model ({} > {}). Running this"
                 " sequence through BERT will result in indexing errors".format(len(ids), self.max_len)
@@ -116,27 +134,52 @@ class BertTokenizer(object):
             tokens.append(self.ids_to_tokens[i])
         return tokens
 
+    def save_vocabulary(self, vocab_path):
+        """Save the tokenizer vocabulary to a directory or file."""
+        index = 0
+        if os.path.isdir(vocab_path):
+            vocab_file = os.path.join(vocab_path, VOCAB_NAME)
+        with open(vocab_file, "w", encoding="utf-8") as writer:
+            for token, token_index in sorted(self.vocab.items(), key=lambda kv: kv[1]):
+                if index != token_index:
+                    logger.warning("Saving vocabulary to {}: vocabulary indices are not consecutive."
+                                   " Please check that the vocabulary is not corrupted!".format(vocab_file))
+                    index = token_index
+                writer.write(token + u'\n')
+                index += 1
+        return vocab_file
+
     @classmethod
-    def from_pretrained(cls, pretrained_model_name, cache_dir=None, *inputs, **kwargs):
+    def from_pretrained(cls, pretrained_model_name_or_path, cache_dir=None, *inputs, **kwargs):
         """
         Instantiate a PreTrainedBertModel from a pre-trained model file.
         Download and cache the pre-trained model file if needed.
         """
-        if pretrained_model_name in PRETRAINED_VOCAB_ARCHIVE_MAP:
-            vocab_file = PRETRAINED_VOCAB_ARCHIVE_MAP[pretrained_model_name]
+        if pretrained_model_name_or_path in PRETRAINED_VOCAB_ARCHIVE_MAP:
+            vocab_file = PRETRAINED_VOCAB_ARCHIVE_MAP[pretrained_model_name_or_path]
+            if '-cased' in pretrained_model_name_or_path and kwargs.get('do_lower_case', True):
+                logger.warning("The pre-trained model you are loading is a cased model but you have not set "
+                               "`do_lower_case` to False. We are setting `do_lower_case=False` for you but "
+                               "you may want to check this behavior.")
+                kwargs['do_lower_case'] = False
+            elif '-cased' not in pretrained_model_name_or_path and not kwargs.get('do_lower_case', True):
+                logger.warning("The pre-trained model you are loading is an uncased model but you have set "
+                               "`do_lower_case` to False. We are setting `do_lower_case=True` for you "
+                               "but you may want to check this behavior.")
+                kwargs['do_lower_case'] = True
         else:
-            vocab_file = pretrained_model_name
+            vocab_file = pretrained_model_name_or_path
         if os.path.isdir(vocab_file):
             vocab_file = os.path.join(vocab_file, VOCAB_NAME)
         # redirect to the cache, if necessary
         try:
             resolved_vocab_file = cached_path(vocab_file, cache_dir=cache_dir)
-        except FileNotFoundError:
+        except EnvironmentError:
             logger.error(
                 "Model name '{}' was not found in model name list ({}). "
                 "We assumed '{}' was a path or url but couldn't find any file "
                 "associated to this path or url.".format(
-                    pretrained_model_name,
+                    pretrained_model_name_or_path,
                     ', '.join(PRETRAINED_VOCAB_ARCHIVE_MAP.keys()),
                     vocab_file))
             return None
@@ -145,10 +188,10 @@ class BertTokenizer(object):
         else:
             logger.info("loading vocabulary file {} from cache at {}".format(
                 vocab_file, resolved_vocab_file))
-        if pretrained_model_name in PRETRAINED_VOCAB_POSITIONAL_EMBEDDINGS_SIZE_MAP:
+        if pretrained_model_name_or_path in PRETRAINED_VOCAB_POSITIONAL_EMBEDDINGS_SIZE_MAP:
             # if we're using a pretrained model, ensure the tokenizer wont index sequences longer
             # than the number of positional embeddings
-            max_len = PRETRAINED_VOCAB_POSITIONAL_EMBEDDINGS_SIZE_MAP[pretrained_model_name]
+            max_len = PRETRAINED_VOCAB_POSITIONAL_EMBEDDINGS_SIZE_MAP[pretrained_model_name_or_path]
             kwargs['max_len'] = min(kwargs.get('max_len', int(1e12)), max_len)
         # Instantiate tokenizer.
         tokenizer = cls(resolved_vocab_file, *inputs, **kwargs)

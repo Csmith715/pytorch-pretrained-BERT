@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Google AI Language Team Authors and The HugginFace Inc. team.
+# Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -57,7 +57,7 @@ class InputFeatures(object):
 
 
 def convert_examples_to_features(examples, seq_length, tokenizer):
-    """Loads a data file into a list of `InputBatch`s."""
+    """Loads a data file into a list of `InputFeature`s."""
 
     features = []
     for (ex_index, example) in enumerate(examples):
@@ -80,10 +80,10 @@ def convert_examples_to_features(examples, seq_length, tokenizer):
         # The convention in BERT is:
         # (a) For sequence pairs:
         #  tokens:   [CLS] is this jack ##son ##ville ? [SEP] no it is not . [SEP]
-        #  type_ids: 0   0  0    0    0     0       0 0    1  1  1  1   1 1
+        #  type_ids:   0   0  0    0    0     0      0   0    1  1  1   1  1   1
         # (b) For single sequences:
         #  tokens:   [CLS] the dog is hairy . [SEP]
-        #  type_ids: 0   0   0   0  0     0 0
+        #  type_ids:   0   0   0   0  0     0   0
         #
         # Where "type_ids" are used to indicate whether this is the first
         # sequence or the second sequence. The embedding vectors for `type=0` and
